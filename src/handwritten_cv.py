@@ -1,29 +1,40 @@
 import sys
+
 import numpy as np
-from PyQt6.QtWidgets import (QWidget, QApplication, QPushButton, QMenuBar, QMenu,
-                             QHBoxLayout, QVBoxLayout, QLabel, QMainWindow,
-                             QFileDialog, QTableWidget, QTableWidgetItem)
-
-from PyQt6.QtGui import QPainter, QAction
-
-from PyQt6.QtCore import Qt, pyqtSignal
-from PIL import Image
 import torch
-from torchvision import transforms
-from model import Model
 import torch.nn.functional as F
+from PIL import Image
+from PyQt6.QtCore import QFileInfo, Qt, pyqtSignal
+from PyQt6.QtGui import QAction, QPainter, QPixmap
+from PyQt6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMenu,
+    QMenuBar,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+from torchvision import transforms
+
+from model import Model
 
 # Load trained model
 model = Model()
 model.load_state_dict(torch.load("../model.pth", map_location="cpu"))
 model.eval()
 
+
 def predict_digit(canvas_widget: QWidget, label: QLabel = None):
     img = canvas_widget.get_image().astype(np.float32) / 255.0
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize([0.1307], [0.3081])
-    ])
+    transform = transforms.Compose(
+        [transforms.ToTensor(), transforms.Normalize([0.1307], [0.3081])]
+    )
     img = transform(img).unsqueeze(0)
 
     with torch.inference_mode():
@@ -38,9 +49,11 @@ def predict_digit(canvas_widget: QWidget, label: QLabel = None):
 
         return probs.squeeze().tolist()
 
+
 # --- Canvas Widget ---
 class CanvasWidget(QWidget):
     drawSignal = pyqtSignal()
+
     def __init__(self, grid_size=28, pixel_size=10):
         super().__init__()
         self.grid_size = grid_size
@@ -49,7 +62,6 @@ class CanvasWidget(QWidget):
         self.canvas = np.zeros((grid_size, grid_size), dtype=np.uint8)
         self.text_color = Qt.GlobalColor.black
         self.bg_color = Qt.GlobalColor.white
-
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -92,10 +104,17 @@ class CanvasWidget(QWidget):
         return self.canvas.copy()
 
     def save(self, filename):
-        img = Image.fromarray(self.canvas).convert("L")
-        img = img.resize((280, 280), Image.NEAREST)
-        img.save(filename)
+        pixmap = QPixmap(self.size())
+        self.render(pixmap)
+        pixmap = pixmap.scaled(
+            280,
+            280,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        pixmap.save(filename)
         print(f"Saved to {filename}")
+
 
 class ProbabilitiesWidget(QWidget):
     def __init__(self):
@@ -116,18 +135,18 @@ class ProbabilitiesWidget(QWidget):
         self.table.setFont(tableFont)
 
     def populate(self, sorted_probs):
-        for (i, s) in enumerate(sorted_probs):
+        for i, s in enumerate(sorted_probs):
             self.table.setItem(i, 0, QTableWidgetItem(f"{s[0]:.2f}"))
             self.table.setItem(i, 1, QTableWidgetItem(f"{s[1]:.2f}"))
+
 
 # --- Main App Widget ---
 class DrawWidget(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("28x28 Drawing Pad")
-        #self.setFixedSize(280, 330)
+        # self.setFixedSize(280, 330)
         self.darkMode = False
-        self.liveProbabilityMode = True
 
         self.menubar = QMenuBar()
 
@@ -147,15 +166,8 @@ class DrawWidget(QMainWindow):
         self.editMenu__darkMode.setCheckable(True)
         self.editMenu__darkMode.setChecked(self.darkMode)
 
-        self.editMenu__liveProbabilityMode = QAction("Live Probability Mode")
-        self.editMenu__liveProbabilityMode.setCheckable(True)
-        self.editMenu__liveProbabilityMode.setChecked(self.liveProbabilityMode)
-
         self.editMenu.addAction(self.editMenu__darkMode)
         self.editMenu__darkMode.triggered.connect(self.toggle_dark_mode)
-
-        self.editMenu.addAction(self.editMenu__liveProbabilityMode)
-        self.editMenu__liveProbabilityMode.triggered.connect(self.toggle_live_probability_mode)
 
         self.menubar.addMenu(self.fileMenu)
         self.menubar.addMenu(self.editMenu)
@@ -163,17 +175,12 @@ class DrawWidget(QMainWindow):
         # Canvas as its own widget
         self.canvas_widget = CanvasWidget()
 
-        if self.liveProbabilityMode:
-            self.canvas_widget.drawSignal.connect(self.predict)
-
         # Buttons
         self.clear_btn = QPushButton("Clear")
-        self.predict_btn = QPushButton("Predict")
 
         self.clear_btn.clicked.connect(self.clear_btn_clicked)
 
-        #self.save_btn.clicked.connect(lambda: self.canvas_widget.save("../digit.jpg"))
-        self.predict_btn.clicked.connect(self.predict)
+        # self.save_btn.clicked.connect(lambda: self.canvas_widget.save("../digit.jpg"))
 
         self.pred_widget_label = QLabel("Predicted Digit: ")
 
@@ -186,7 +193,6 @@ class DrawWidget(QMainWindow):
         # Layout
         button_layout = QHBoxLayout()
         button_layout.addWidget(self.clear_btn)
-        button_layout.addWidget(self.predict_btn)
 
         canvas_layout = QHBoxLayout()
         canvas_layout.addStretch()
@@ -201,11 +207,14 @@ class DrawWidget(QMainWindow):
 
         main_1_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.main_2_layout = QVBoxLayout() # This is the layout for the detailed probability view
+        self.main_2_layout = (
+            QVBoxLayout()
+        )  # This is the layout for the detailed probability view
 
         self.probabilities_widget = ProbabilitiesWidget()
-        self.probabilities_widget.setVisible(self.liveProbabilityMode)
         self.main_2_layout.addWidget(self.probabilities_widget)
+
+        self.canvas_widget.drawSignal.connect(self.predict)
 
         main_layout = QHBoxLayout()
         main_layout.addLayout(main_1_layout)
@@ -220,12 +229,18 @@ class DrawWidget(QMainWindow):
         Y = predict_digit(self.canvas_widget, self.pred_widget_label)
 
         digit_probs = list(enumerate(Y))
-        sorted_probs = sorted(digit_probs, key = lambda x: x[1], reverse=True)
+        sorted_probs = sorted(digit_probs, key=lambda x: x[1], reverse=True)
         self.probabilities_widget.populate(sorted_probs)
 
     def saveAction(self):
-        filename, = QFileDialog.getSaveFileName()
-        if filename != "":
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Save Image", "", "Image Files (*.png *.jpg *.jpeg);;All Files (*)"
+        )
+
+        if filename:
+            if not QFileInfo(filename).suffix():
+                filename += ".png"
+
             self.canvas_widget.save(filename)
 
     def clear_btn_clicked(self):
@@ -243,12 +258,6 @@ class DrawWidget(QMainWindow):
 
         self.darkMode = not self.darkMode
         self.canvas_widget.update()
-
-    def toggle_live_probability_mode(self):
-        self.liveProbabilityMode = not self.liveProbabilityMode
-        self.probabilities_widget.setVisible(self.liveProbabilityMode)
-        if self.liveProbabilityMode:
-            self.canvas_widget.drawSignal.connect(self.predict)
 
 
 if __name__ == "__main__":

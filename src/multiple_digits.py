@@ -1,6 +1,6 @@
 import torch
 import matplotlib
-matplotlib.use('Qt6Agg')
+matplotlib.use('qtagg')
 from torch import nn
 from torch.utils.data import DataLoader
 import cv2
